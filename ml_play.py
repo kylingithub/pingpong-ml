@@ -57,9 +57,9 @@ def ml_loop(side: str):
         ball_X = scene_info.ball[0]
         ball_Y = scene_info.ball[1]
         plat_X = scene_info.platform_2P[0]
-        if side == '1P':
+        if side == '2P':
             ball_Y = reflector(scene_info, scene_info.ball[1])
-            plat_X = scene_info.platform_1P[0]
+            plat_X = scene_info.platform_2P[0]
         direct = [1, 1]
         if ball_X - last_x < 0:
             direct[0] = -1
