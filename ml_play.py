@@ -2,153 +2,71 @@
 The template of the script for the machine learning process in game pingpong
 """
 
-# Import the necessary modules and classes
-import games.pingpong.communication as comm
-from games.pingpong.communication import (
-    SceneInfo, GameStatus, PlatformAction
-)
+class MLPlay:
+    def __init__(self, side):
+        """
+        Constructor
 
+        @param side A string "1P" or "2P" indicates that the `MLPlay` is used by
+               which side.
+        """
+        self.ball_served = False
+        self.side = side
 
-def compute_x_end_1P(ball, ball_last):
-    direction_x = ball[0] - ball_last[0]
-    direction_y = ball[1] - ball_last[1]
-    ball_x_end = 0
-    # y = mx + c
-    if direction_y>0 and direction_x!=0:
-        m = direction_y / direction_x
-        c = ball[1] - m*ball[0]
-        ball_x_end = (420 - c )/m
-    else:
-        ball_x_end = 110
+    def update(self, scene_info):
+        """
+        Generate the command according to the received scene information
+        """
+        if scene_info["status"] != "GAME_ALIVE":
+            return "RESET"
 
-    while ball_x_end < 0 or ball_x_end > 200:
-        if ball_x_end<0:
-            ball_x_end = -ball_x_end
-        elif ball_x_end>200:
-            ball_x_end = 400-ball_x_end
-
-    return ball_x_end
-
-def compute_x_end_2P(ball, ball_last):
-    direction_x = ball[0] - ball_last[0]
-    direction_y = ball[1] - ball_last[1]
-    ball_x_end = 0
-    # y = mx + c
-    if direction_y < 0 and direction_x!=0:
-        m = direction_y / direction_x
-        c = ball[1] - m*ball[0]
-        ball_x_end = (80 - c )/m
-    else:
-        ball_x_end = 110
-
-    while ball_x_end < 0 or ball_x_end > 200:
-        if ball_x_end<0:
-            ball_x_end = -ball_x_end
-        elif ball_x_end>200:
-            ball_x_end = 400-ball_x_end
-    # print(ball_x_end)
-    return ball_x_end
-
-
-def ml_loop(side: str):
-    """
-    The main loop for the machine learning process
-
-    The `side` parameter can be used for switch the code for either of both sides,
-    so you can write the code for both sides in the same script. Such as:
-    ```python
-    if side == "1P":
-        ml_loop_for_1P()
-    else:
-        ml_loop_for_2P()
-    ```
-
-    @param side The side which this script is executed for. Either "1P" or "2P".
-    """
-
-
-    # === Here is the execution order of the loop === #
-    # 1. Put the initialization code here
-
-    # 2. Inform the game process that ml process is ready
-    comm.ml_ready()
-
-    if side == "1P":
-        ml_loop_for_1P()
-    else:
-        ml_loop_for_2P()
-
-def ml_loop_for_1P():
-    ball_last = [101, 101]
-    # 3. Start an endless loop
-    while True:
-        # 3.1. Receive the scene information sent from the game process
-        scene_info = comm.get_scene_info()
-
-        # 3.2. If either of two sides wins the game, do the updating or
-        #      resetting stuff and inform the game process when the ml process
-        #      is ready.
-        if scene_info.status == GameStatus.GAME_1P_WIN or \
-                scene_info.status == GameStatus.GAME_2P_WIN:
-            # Do some updating or resetting stuff
-
-            # 3.2.1 Inform the game process that
-            #       the ml process is ready for the next round
-            comm.ml_ready()
-            continue
-
-        # 3.3 Put the code here to handle the scene information
-
-        # print(scene_info.ball)
-        ball_x_end = compute_x_end_1P(scene_info.ball, ball_last)
-        ball_last = scene_info.ball
-        move = (ball_x_end) - (scene_info.platform_1P[0] + 15)
-        # motion direction of ball
-        # compute the location of falling
-
-        # 3.4. Send the instruction for this frame to the game process
-        if move > 0:
-            comm.send_instruction(scene_info.frame, PlatformAction.MOVE_RIGHT)
-        elif move < 0:
-            comm.send_instruction(scene_info.frame, PlatformAction.MOVE_LEFT)
+        if not self.ball_served:
+            self.ball_served = True
+            return "SERVE_TO_LEFT"
         else:
-            comm.send_instruction(scene_info.frame, PlatformAction.NONE)
+            if self.side == "1P":
+                if scene_info["ball_speed"][1] > 0 : # 球正在向下 # ball goes down
+                    x = ( scene_info["platform_1P"][1]-scene_info["ball"][1] ) // scene_info["ball_speed"][1] # 幾個frame以後會需要接  # x means how many frames before catch the ball
+                    pred = scene_info["ball"][0]+(scene_info["ball_speed"][0]*x)  # 預測最終位置 # pred means predict ball landing site 
+                    bound = pred // 200 # Determine if it is beyond the boundary
+                    if (bound > 0): # pred > 200 # fix landing position
+                        if (bound%2 == 0) : 
+                            pred = pred - bound*200                    
+                        else :
+                            pred = 200 - (pred - 200*bound)
+                    elif (bound < 0) : # pred < 0
+                        if (bound%2 ==1) :
+                            pred = abs(pred - (bound+1) *200)
+                        else :
+                            pred = pred + (abs(bound)*200)
+                else : # 球正在向上 
+                    pred = 100
+                if scene_info["platform_1P"][0] +20 > (pred-10) and scene_info["platform_1P"][0]+20 < (pred+10): return "NONE"
+                elif scene_info["platform_1P"][0]+20 <= (pred-10) : return "MOVE_RIGHT" # goes right
+                else : return "MOVE_LEFT" # goes left
 
-
-def ml_loop_for_2P():
-    ball_last = [101, 101]
-
-    # 3. Start an endless loop
-    while True:
-        # 3.1. Receive the scene information sent from the game process
-        scene_info = comm.get_scene_info()
-
-        # 3.2. If either of two sides wins the game, do the updating or
-        #      resetting stuff and inform the game process when the ml process
-        #      is ready.
-        if scene_info.status == GameStatus.GAME_1P_WIN or \
-                scene_info.status == GameStatus.GAME_2P_WIN:
-            # Do some updating or resetting stuff
-
-            # 3.2.1 Inform the game process that
-            #       the ml process is ready for the next round
-            comm.ml_ready()
-            continue
-
-        # 3.3 Put the code here to handle the scene information
-
-        # print(scene_info.ball)
-        ball_x_end = compute_x_end_2P(scene_info.ball, ball_last)
-        ball_last = scene_info.ball
-        move = (ball_x_end) - (scene_info.platform_2P[0] + 15)
-        # motion direction of ball
-        # compute the location of falling
-
-        # 3.4. Send the instruction for this frame to the game process
-        if move > 0:
-            comm.send_instruction(scene_info.frame, PlatformAction.MOVE_RIGHT)
-        elif move < 0:
-            comm.send_instruction(scene_info.frame, PlatformAction.MOVE_LEFT)
-        else:
-            comm.send_instruction(scene_info.frame, PlatformAction.NONE)
-
+            elif self.side == "2P":
+                if scene_info["ball_speed"][1] > 0 : 
+                    pred = 100
+                else : 
+                    x = ( scene_info["platform_2P"][1]+30-scene_info["ball"][1] ) // scene_info["ball_speed"][1] 
+                    pred = scene_info["ball"][0]+(scene_info["ball_speed"][0]*x) 
+                    bound = pred // 200 
+                    if (bound > 0):
+                        if (bound%2 == 0):
+                            pred = pred - bound*200 
+                        else :
+                            pred = 200 - (pred - 200*bound)
+                    elif (bound < 0) :
+                        if bound%2 ==1:
+                            pred = abs(pred - (bound+1) *200)
+                        else :
+                            pred = pred + (abs(bound)*200)
+                if scene_info["platform_2P"][0]+20  > (pred-10) and scene_info["platform_2P"][0]+20 < (pred+10): return "NONE" # NONE
+                elif scene_info["platform_2P"][0]+20 <= (pred-10) : return "MOVE_RIGHT" # goes right
+                else : return "MOVE_LEFT" # goes left
+    def reset(self):
+        """
+        Reset the status
+        """
+        self.ball_served = False
