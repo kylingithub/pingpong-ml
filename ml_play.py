@@ -1,6 +1,10 @@
 """
 The template of the script for the machine learning process in game pingpong
+
+Only "2P"
 """
+import pickle, os
+import numpy as np
 
 class MLPlay:
     def __init__(self, side):
@@ -12,6 +16,9 @@ class MLPlay:
         """
         self.ball_served = False
         self.side = side
+        # Need scikit-learn==0.22.2 
+        with open(os.path.join(os.path.dirname(__file__),'save','model.pickle'), 'rb') as f:
+            self.model = pickle.load(f)
 
     def update(self, scene_info):
         """
@@ -24,47 +31,27 @@ class MLPlay:
             self.ball_served = True
             return "SERVE_TO_LEFT"
         else:
-            if self.side == "1P":
-                if scene_info["ball_speed"][1] > 0 : # 球正在向下 # ball goes down
-                    x = ( scene_info["platform_1P"][1]-scene_info["ball"][1] ) // scene_info["ball_speed"][1] # 幾個frame以後會需要接  # x means how many frames before catch the ball
-                    pred = scene_info["ball"][0]+(scene_info["ball_speed"][0]*x)  # 預測最終位置 # pred means predict ball landing site 
-                    bound = pred // 200 # Determine if it is beyond the boundary
-                    if (bound > 0): # pred > 200 # fix landing position
-                        if (bound%2 == 0) : 
-                            pred = pred - bound*200                    
-                        else :
-                            pred = 200 - (pred - 200*bound)
-                    elif (bound < 0) : # pred < 0
-                        if (bound%2 ==1) :
-                            pred = abs(pred - (bound+1) *200)
-                        else :
-                            pred = pred + (abs(bound)*200)
-                else : # 球正在向上 
-                    pred = 100
-                if scene_info["platform_1P"][0] +20 > (pred-10) and scene_info["platform_1P"][0]+20 < (pred+10): return "NONE"
-                elif scene_info["platform_1P"][0]+20 <= (pred-10) : return "MOVE_RIGHT" # goes right
-                else : return "MOVE_LEFT" # goes left
+            if scene_info["ball_speed"][1] > 0 :
+                if scene_info["ball_speed"][0] > 0:
+                    direction = 0
+                else :
+                    direction = 1
+            else :
+                if scene_info["ball_speed"][0] > 0:
+                    direction = 2
+                else:
+                    direction = 3
+            X = [scene_info["ball"][0], scene_info["ball"][1], direction, scene_info["blocker"][0],scene_info["ball_speed"][0],scene_info["ball_speed"][1]]
+            X = np.array(X).reshape((1,-1))
+            pred = self.model.predict(X)
+            if scene_info["platform_2P"][0]+20  > (pred-10)and scene_info["platform_2P"][0]+20 < (pred+10):
+                if scene_info["platform_2P"][1]+30-scene_info["ball_speed"][1] > scene_info["ball"][1] : #slice
+                    return "NONE"
+                else :
+                    return "NONE" # NONE
+            elif scene_info["platform_2P"][0]+20 <= (pred-10) : return "MOVE_RIGHT" # goes right
+            else : return "MOVE_LEFT" # goes left
 
-            elif self.side == "2P":
-                if scene_info["ball_speed"][1] > 0 : 
-                    pred = 100
-                else : 
-                    x = ( scene_info["platform_2P"][1]+30-scene_info["ball"][1] ) // scene_info["ball_speed"][1] 
-                    pred = scene_info["ball"][0]+(scene_info["ball_speed"][0]*x) 
-                    bound = pred // 200 
-                    if (bound > 0):
-                        if (bound%2 == 0):
-                            pred = pred - bound*200 
-                        else :
-                            pred = 200 - (pred - 200*bound)
-                    elif (bound < 0) :
-                        if bound%2 ==1:
-                            pred = abs(pred - (bound+1) *200)
-                        else :
-                            pred = pred + (abs(bound)*200)
-                if scene_info["platform_2P"][0]+20  > (pred-10) and scene_info["platform_2P"][0]+20 < (pred+10): return "NONE" # NONE
-                elif scene_info["platform_2P"][0]+20 <= (pred-10) : return "MOVE_RIGHT" # goes right
-                else : return "MOVE_LEFT" # goes left
     def reset(self):
         """
         Reset the status
